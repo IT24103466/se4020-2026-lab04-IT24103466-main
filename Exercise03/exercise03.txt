@@ -1,0 +1,107 @@
+Lab 04 - Exercise 3: Monte Carlo calculation of Pi, N = 10,000,000 random points
+
+Compile and run:
+    gcc -O2 -fopenmp lab04c.c -o lab04c.o
+    ./lab04c.o <threads>
+
+Hardware: Intel Core i5-8365U, 4 physical cores, 2 hardware threads per core = 8 logical CPUs.
+    Configuration A (small): 1 physical core, 2 hardware threads  (taskset -c 0,4)
+    Configuration B (large): 4 physical cores, 8 hardware threads (all CPUs)
+
+------------------------------------------------------------------------------
+Method
+------------------------------------------------------------------------------
+N random points (x, y) are generated in the unit square. A point is a "hit" if
+x*x + y*y <= 1. Then pi is approximately 4 * hits / N.
+
+Problems when parallelising the earlier program:
+ 1. The counter "hits" is shared, so hits++ from several threads is a data race
+    (lost updates). It is fixed with a critical or an atomic section.
+ 2. rand() keeps hidden shared state and is not thread safe (and is slow when threads
+    share it). Each thread therefore uses its own generator state: rand_r(&seed) with a
+    private seed (42 + thread number).
+
+Code (critical version; the atomic version only replaces "critical" with "atomic"):
+    #pragma omp parallel
+    {
+        unsigned int seed = 42 + omp_get_thread_num();      // private
+        #pragma omp for
+        for (long i = 0; i < N; i++) {
+            double x = rand_r(&seed) / (double)RAND_MAX;
+            double y = rand_r(&seed) / (double)RAND_MAX;
+            if (x*x + y*y <= 1.0) {
+                #pragma omp critical        // or: #pragma omp atomic
+                hits++;
+            }
+        }
+    }
+    pi = 4.0 * hits / N;
+
+------------------------------------------------------------------------------
+Results (N = 10,000,000)
+------------------------------------------------------------------------------
+Configuration B (4 cores / 8 hardware threads): time in seconds, estimate of pi
+ Threads | Serial        | Critical        | Atomic
+    1    | 0.0823 3.140532| 0.1566 3.140532 | 0.1110 3.140532
+    2    | 0.0770 3.140532| 0.3531 3.141438 | 0.2245 3.141438
+    4    | 0.0765 3.140532| 0.6771 3.141520 | 0.2456 3.141520
+    8    | 0.0793 3.140532| 0.9898 3.141606 | 0.1943 3.141606
+   16    | 0.0805 3.140532| 1.0650 3.141592 | 0.1646 3.141592
+
+Configuration A (1 core / 2 hardware threads):
+ Threads | Serial        | Critical        | Atomic
+    1    | 0.0812 3.140532| 0.1680 3.140532 | 0.1154 3.140532
+    2    | 0.0789 3.140532| 0.1855 3.141438 | 0.1054 3.141438
+    4    | 0.0824 3.140532| 0.1800 3.141520 | 0.0816 3.141520
+    8    | 0.0760 3.140532| 0.1823 3.141606 | 0.1059 3.141606
+   16    | 0.0771 3.140532| 0.1800 3.141592 | 0.0816 3.141592
+
+Speedup = serial time / parallel time (serial taken as 0.079 s):
+Configuration B:
+ Threads | Critical | Atomic
+    1    |  0.50    | 0.71
+    2    |  0.22    | 0.35
+    4    |  0.12    | 0.32
+    8    |  0.08    | 0.41
+   16    |  0.07    | 0.48
+Configuration A:
+ Threads | Critical | Atomic
+    1    |  0.47    | 0.68
+    2    |  0.43    | 0.75
+    4    |  0.44    | 0.97
+    8    |  0.43    | 0.75
+   16    |  0.44    | 0.97
+
+------------------------------------------------------------------------------
+Is the answer correct?
+------------------------------------------------------------------------------
+Yes. With critical and atomic the hit counter is updated correctly (no lost updates),
+and every estimate is within about 0.001 of pi (3.1416). Critical and atomic give exactly
+the same value for the same thread count, as they should. The estimate changes slightly
+with the number of threads (3.140532 for 1 thread, 3.141592 for 16) only because the
+random numbers are split into different per-thread streams, so a different set of
+points is sampled. This is normal statistical variation of the Monte Carlo method
+(the error is about 1/sqrt(N), roughly 0.0005 to 0.001 for N = 10 million), not a race.
+
+------------------------------------------------------------------------------
+1. How does the parallel program perform?
+------------------------------------------------------------------------------
+- Serial time is about 0.079 s. The correct parallel versions are not faster than
+  serial in this test (all speedups are below 1).
+- Critical is the worst: its time rises with the thread count on Configuration B
+  (0.157 s with 1 thread to 1.07 s with 16 threads, speedup 0.07), because about 78.5% of
+  the iterations hit the lock and the threads queue for it.
+- Atomic is much better than critical (0.16 to 0.25 s on Configuration B with 4 to 16
+  threads, against 0.68 to 1.07 s for critical), since an atomic increment is one
+  hardware instruction instead of a lock, but it still does not beat serial because the
+  work per iteration (two random numbers and a few multiplications) is small and all
+  threads keep updating the same memory location.
+- On Configuration A (one core) the times are nearly constant whatever the number of
+  threads (critical about 0.18 s, atomic 0.08 to 0.11 s) because only 2 hardware threads
+  can execute at once. Atomic with 4 and 16 threads (0.0816 s) is about equal to serial.
+- Larger configuration: more cores did not help the lock-based versions, because the cost
+  is the contention on the shared counter, not a lack of computing power.
+
+Better solution: use a private counter per thread and combine at the end with
+reduction(+:hits). That needs synchronisation only once per thread and gives a real
+speedup, because the random number work then runs in parallel with no waiting.

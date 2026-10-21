@@ -1,0 +1,7 @@
+threads=1 schedule=static pi=3.1415926536 avg_time=0.0954
+threads=4 schedule=static pi=3.1415926536 avg_time=0.6143
+threads=8 schedule=static pi=3.1415926536 avg_time=0.8764
+threads=12 schedule=static pi=3.1415926536 avg_time=0.9485
+threads=16 schedule=static pi=3.1415926536 avg_time=1.1930
+threads=20 schedule=static pi=3.1415926536 avg_time=1.1996
+threads=24 schedule=static pi=3.1415926536 avg_time=1.4332

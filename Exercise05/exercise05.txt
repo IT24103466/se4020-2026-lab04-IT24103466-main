@@ -1,0 +1,77 @@
+Lab 04 - Exercise 5: Three ways of summing 1..100000 with OpenMP
+
+Compile and run:
+    gcc -O2 -fopenmp lab04e.c -o lab04e.o
+    OMP_NUM_THREADS=<threads> ./lab04e.o
+
+Notes on the code:
+- The loop variable is r in all three segments (the sheet's "i <= 100000" in segments B and
+  C is a typo for "r <= 100000").
+- The sum 1 + 2 + ... + 100000 = 5,000,050,000 is larger than the largest int
+  (2,147,483,647), so sum and local_sum are declared long long. With int the result
+  would overflow.
+- To count how often a line runs, a counter is incremented under #pragma omp atomic
+  next to that line (the commented "print how many times" statements).
+- Hardware: Intel Core i5-8365U, 4 physical cores, 8 logical CPUs.
+
+Segments:
+ A: #pragma omp parallel for, with #pragma omp atomic on  sum = sum + r;
+ B: #pragma omp parallel { long long local_sum = 0;  #pragma omp for ... local_sum += r;
+        then   #pragma omp atomic   sum += local_sum; }
+ C: #pragma omp parallel for reduction(+:sum)   ...  sum += r;
+
+------------------------------------------------------------------------------
+1. Running time (seconds) and result
+------------------------------------------------------------------------------
+ Threads | Result (A, B, C all) |    A       |    B       |    C
+    1    |    5000050000        | 0.001299   | 0.000682   | 0.000049
+    2    |    5000050000        | 0.004135   | 0.002246   | 0.000026
+    4    |    5000050000        | 0.005742   | 0.002726   | 0.000013
+    8    |    5000050000        | 0.006585   | 0.002956   | 0.000007
+
+All three segments give the correct sum, 5,000,050,000.
+(The counters used to count executions add a small atomic cost to A and B, but the order
+C < B < A is the same without them, and is explained below.)
+
+------------------------------------------------------------------------------
+2. How many times does each printed (commented) line run?
+------------------------------------------------------------------------------
+Segment A
+  "print how many times the line runs" (inside the loop): 100,000 times in total,
+  once per iteration, whatever the number of threads (the iterations are divided among
+  the threads).
+
+Segment B
+  - Line after "int local_sum = 0;" (inside the parallel region, before the for):
+    runs once per thread = number of threads (1, 2, 4, 8 in the runs above).
+  - Line inside the for loop: 100,000 times in total (divided among the threads).
+  - Line after the atomic "sum += local_sum;": once per thread = number of threads
+    (1, 2, 4, 8 in the runs above).
+
+Segment C
+  There is no printed line. Internally each thread keeps its own private copy of sum
+  and the copies are combined once per thread at the end.
+
+------------------------------------------------------------------------------
+3. Why the 2nd and 3rd segments run faster than the 1st
+------------------------------------------------------------------------------
+Segment A does an atomic update of the one shared variable sum in every iteration, so
+100,000 atomic updates happen. The threads have to take turns on that variable, and
+the cache line that holds sum is passed from core to core each time (contention). The
+more threads there are, the worse it gets (0.0013 s with 1 thread to 0.0066 s with 8
+threads).
+
+Segment B gives every thread its own private local_sum. The 100,000 additions happen on
+this private variable, with no sharing and no waiting. The atomic update of the shared
+sum happens only once per thread (e.g. 8 times with 8 threads) instead of 100,000
+times, so there is almost no contention.
+
+Segment C does the same as B automatically: reduction(+:sum) gives each thread a private
+copy of sum initialised to 0 and combines the copies once at the end. The compiler
+generates this code, and no per-iteration synchronisation is needed, so it is the
+fastest (0.000007 s with 8 threads) and the only one that gets faster as threads are
+added.
+
+In short: A synchronises 100,000 times, B synchronises once per thread, and C
+synchronises once per thread automatically. Fewer synchronisation points means less
+waiting, which is why B and C are faster than A.

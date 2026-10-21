@@ -1,0 +1,20 @@
+threads=1
+serial   pi=3.140532 t=0.0812s
+critical pi=3.140532 t=0.1680s
+atomic   pi=3.140532 t=0.1154s
+threads=2
+serial   pi=3.140532 t=0.0789s
+critical pi=3.141438 t=0.1855s
+atomic   pi=3.141438 t=0.1054s
+threads=4
+serial   pi=3.140532 t=0.0824s
+critical pi=3.141520 t=0.1800s
+atomic   pi=3.141520 t=0.0816s
+threads=8
+serial   pi=3.140532 t=0.0760s
+critical pi=3.141606 t=0.1823s
+atomic   pi=3.141606 t=0.1059s
+threads=16
+serial   pi=3.140532 t=0.0771s
+critical pi=3.141592 t=0.1800s
+atomic   pi=3.141592 t=0.0816s

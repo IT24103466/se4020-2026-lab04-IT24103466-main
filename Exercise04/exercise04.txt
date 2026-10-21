@@ -1,0 +1,97 @@
+Lab 04 - Exercise 4: Pi by numerical integration with private / firstprivate / shared and atomic
+
+pi/4 = integral 0..1 dx/(1+x^2) is approximately (1/N) * sum_{i=1..N} 1 / (1 + ((i-0.5)/N)^2),  N = 10,000,000
+
+Files: lab04d.c (program), run04.sh (runs the experiments), plot04.py (draws the graphs),
+results.csv (threads, average time), schedules.txt (schedule comparison),
+threads_vs_time.png and threads_vs_speedup.png (the two graphs).
+
+Compile and run:
+    gcc -O2 -fopenmp lab04d.c -o lab04d.o
+    OMP_NUM_THREADS=<threads> ./lab04d.o <static|dynamic|guided|auto>
+
+Hardware: Intel Core i5-8365U, 4 physical cores, 8 logical CPUs (hyperthreading).
+
+------------------------------------------------------------------------------
+1 and 2. private, shared, firstprivate and the atomic section
+------------------------------------------------------------------------------
+    double sum = 0.0, x;
+    const double step = 1.0 / N;
+    #pragma omp parallel for schedule(runtime) private(x) firstprivate(step) shared(sum)
+    for (long i = 1; i <= N; i++) {
+        x = (i - 0.5) * step;
+        double v = 4.0 / (1.0 + x * x);
+        #pragma omp atomic
+        sum += v;
+    }
+    pi = sum * step;
+
+- private(x): every thread gets its own x. If x were shared, threads would overwrite each
+  other's value (a data race) and the answer would be wrong.
+- firstprivate(step): every thread gets its own copy of step, initialised with the value
+  it had before the parallel region (1.0/N). (private would leave it uninitialised.)
+- shared(sum): all threads add into the one total sum.
+- atomic: makes sum += v indivisible, so no update is lost.
+The result is pi = 3.1415926536 for every thread count, i.e. correct.
+
+------------------------------------------------------------------------------
+3 and 4. Timing method
+------------------------------------------------------------------------------
+The loop was timed with omp_get_wtime(). It was run 10 times for each thread count, the
+first 3 runs were discarded and the average of the remaining 7 runs is reported. The number
+of threads was set with the environment variable OMP_NUM_THREADS (1, 4, 8, 12, 16, 20, 24).
+Schedule: static (default).
+
+------------------------------------------------------------------------------
+5 and 6. Results: threads vs time and speedup
+------------------------------------------------------------------------------
+ Threads | Average time (s) | Speedup = T(1 thread) / T(N threads)
+    1    |      0.0954      |  1.00
+    4    |      0.6143      |  0.16
+    8    |      0.8764      |  0.11
+   12    |      0.9485      |  0.10
+   16    |      1.1930      |  0.08
+   20    |      1.1996      |  0.08
+   24    |      1.4332      |  0.07
+
+(Graphs: threads_vs_time.png and threads_vs_speedup.png.)
+
+Observations:
+- The time increases as the number of threads increases, and the speedup is always below 1:
+  the parallel program with 24 threads is about 15 times slower than with one thread.
+- The reason is the atomic update. All threads add to the same variable sum on every
+  iteration, so they have to take turns, and the cache line holding sum is passed
+  between the cores each time. The loop body is tiny (one division), so the cost of this
+  synchronisation is far larger than the useful work, and more threads mean more contention.
+- The machine has only 4 physical cores (8 hardware threads), so beyond 8 threads there
+  are more threads than CPUs and the operating system also has to switch between them.
+  This adds to the slow-down for 12, 16, 20 and 24 threads.
+- Conclusion: atomic gives the correct answer but cannot give a speedup here. Letting each
+  thread accumulate into a private partial sum and combining the partial sums once
+  (reduction(+:sum)) would remove the contention and give a speedup of up to about the
+  number of physical cores.
+
+------------------------------------------------------------------------------
+7. Different scheduling with 24 threads
+------------------------------------------------------------------------------
+ Schedule | Average time (s) | Pi
+ static   |      1.2010      | 3.1415926536
+ dynamic  |      1.2483      | 3.1415926536
+ guided   |      1.4501      | 3.1415926536
+ auto     |      1.3653      | 3.1415926536
+
+- static: the iterations are divided into equal blocks before the loop starts, so there is
+  no scheduling overhead. Every iteration costs the same, so there is no load imbalance
+  to correct. It was the fastest.
+- dynamic: threads take chunks of iterations from a work queue (default chunk size 1). This
+  has the highest scheduling overhead and is useful only when iteration costs differ, so
+  it gives no benefit here (1.2483 s, slightly slower than static).
+- guided: chunks start large and shrink, with less overhead than dynamic with chunk size
+  1, but it is meant for unbalanced loops. It was the slowest here (1.4501 s).
+- auto: the choice is left to the compiler/runtime (1.3653 s).
+The differences between schedules are small compared with the effect of the atomic
+update, which dominates the run time. The static run at 24 threads in the thread sweep
+(1.4332 s) and in this comparison (1.2010 s) differ by a similar amount, so the
+differences between schedules are about the size of the run-to-run variation. The
+conclusion is that, for this loop with equal-cost iterations, static scheduling is the
+best choice, and the schedule matters much less than avoiding the contention on sum.

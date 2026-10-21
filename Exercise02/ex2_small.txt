@@ -1,0 +1,25 @@
+threads=1
+serial   S=-3.333333e+20 t=0.0159s
+critical S=-3.333333e+20 t=0.1280s
+atomic   S=-3.333333e+20 t=0.0966s
+reduction S=-3.333333e+20 t=0.0156s
+threads=2
+serial   S=-3.333333e+20 t=0.0157s
+critical S=-3.333333e+20 t=0.1417s
+atomic   S=-3.333333e+20 t=0.1341s
+reduction S=-3.333333e+20 t=0.0156s
+threads=4
+serial   S=-3.333333e+20 t=0.0168s
+critical S=-3.333333e+20 t=0.1498s
+atomic   S=-3.333333e+20 t=0.1330s
+reduction S=-3.333333e+20 t=0.0153s
+threads=8
+serial   S=-3.333333e+20 t=0.0152s
+critical S=-3.333333e+20 t=0.1431s
+atomic   S=-3.333333e+20 t=0.1299s
+reduction S=-3.333333e+20 t=0.0148s
+threads=16
+serial   S=-3.333333e+20 t=0.0151s
+critical S=-3.333333e+20 t=0.1463s
+atomic   S=-3.333333e+20 t=0.1307s
+reduction S=-3.333333e+20 t=0.0150s

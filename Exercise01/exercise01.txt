@@ -1,0 +1,146 @@
+Lab 04 - Exercise 1: Calculating Pi (numerical integration, N = 10,000,000)
+
+Compile and run:
+    gcc -O2 -fopenmp lab04a.c -o lab04a.o
+    ./lab04a.o <threads>
+
+Hardware used (Question 5): Intel Core i5-8365U, 1 socket, 4 physical cores, 2 hardware
+threads per core = 8 logical CPUs.
+Two configurations were compared:
+    Configuration A (small): 1 physical core, 2 hardware threads  (taskset -c 0,4)
+    Configuration B (large): 4 physical cores, 8 hardware threads (all CPUs)
+
+Serial time: about 0.0115 s in both configurations (the very first serial run of a
+session was slower, 0.025 s, because of start-up/warm-up effects).
+
+------------------------------------------------------------------------------
+1. Fixing the data race
+------------------------------------------------------------------------------
+The original parallel loop does "sum += 4.0/(1.0+x*x)" on a shared variable. Several
+threads read, add and write back sum at the same time, so some updates are lost (data
+race). The fix is to make the update to sum mutually exclusive:
+
+a) Critical section
+    #pragma omp parallel for
+    for (long i = 1; i <= N; i++) {
+        double x = (i - 0.5) * step;
+        #pragma omp critical
+        sum += 4.0 / (1.0 + x * x);
+    }
+
+b) Atomic section
+    #pragma omp parallel for
+    for (long i = 1; i <= N; i++) {
+        double x = (i - 0.5) * step;
+        #pragma omp atomic
+        sum += 4.0 / (1.0 + x * x);
+    }
+
+(x is declared inside the loop, so each thread has its own copy.)
+
+------------------------------------------------------------------------------
+2. Is the answer correct now?
+------------------------------------------------------------------------------
+Yes. Both the critical and the atomic versions give pi = 3.1415926536 for every thread
+count (1, 2, 4, 8, 16), identical to the serial answer.
+
+The version with the data race gave wrong answers whenever more than one thread ran, and
+the value changed from run to run:
+    Config B: 2 threads 1.2870, 4 threads 0.7194, 8 threads 0.2663, 16 threads 0.3884
+    Config A: 2 threads 1.8546, 4 threads 0.7194, 8 threads 1.0961, 16 threads 1.6811
+With 1 thread there is no race, so it was correct (3.1415926536).
+The error happens because two threads read the same old value of sum, each adds its
+own term and writes it back, so one of the two additions is overwritten (lost update).
+
+------------------------------------------------------------------------------
+3. Speed comparison: race (Lab 03) vs critical vs atomic
+------------------------------------------------------------------------------
+Times in seconds (N = 10,000,000).
+
+Configuration B (4 cores / 8 hardware threads):
+ Threads | Serial | Race (wrong) | Critical | Atomic
+    1    | 0.0249 |   0.0175     |  0.1286  | 0.0940
+    2    | 0.0115 |   0.0059     |  0.2135  | 0.4642
+    4    | 0.0121 |   0.0061     |  0.4598  | 0.6271
+    8    | 0.0115 |   0.0032     |  0.9257  | 0.8698
+   16    | 0.0116 |   0.0034     |  1.2723  | 0.9041
+
+Configuration A (1 core / 2 hardware threads):
+ Threads | Serial | Race (wrong) | Critical | Atomic
+    1    | 0.0140 |   0.0137     |  0.1380  | 0.1059
+    2    | 0.0120 |   0.0123     |  0.1470  | 0.1487
+    4    | 0.0123 |   0.0121     |  0.1481  | 0.1315
+    8    | 0.0115 |   0.0115     |  0.1431  | 0.1322
+   16    | 0.0114 |   0.0118     |  0.1436  | 0.1333
+
+The racy version is the fastest because it has no synchronisation, but its answer is
+wrong, so its speed is meaningless. The critical and atomic versions are correct but
+10 to 100 times slower than the racy version. Atomic is usually a little faster than
+critical at low thread counts because it uses a single hardware atomic instruction,
+while critical uses a lock. At 8 and 16 threads both are similar.
+
+------------------------------------------------------------------------------
+4. Serial vs parallel timing
+------------------------------------------------------------------------------
+Yes, there is a large difference, and the correct parallel versions are SLOWER than the
+serial program. Serial takes about 0.0115 s. With 8 threads on Configuration B,
+critical takes 0.926 s and atomic takes 0.870 s.
+
+Reason: each loop iteration does only a tiny amount of work (one division), but every
+iteration then has to take the lock (or atomic update) on the single shared variable.
+The threads spend their time waiting for each other, so the loop is effectively serial,
+and in addition there is the cost of the lock/atomic operation, the cache line holding
+sum bouncing between cores, and thread overhead. The more threads there are, the more
+contention, so the time increases with the number of threads.
+
+------------------------------------------------------------------------------
+5. How many cores does the Linux machine have?
+------------------------------------------------------------------------------
+4 physical cores with hyperthreading (2 threads per core), i.e. 8 logical CPUs
+(Intel Core i5-8365U, 1 socket). Checked with: nproc and lscpu.
+
+------------------------------------------------------------------------------
+6. Larger configuration (Configuration B vs small Configuration A)
+------------------------------------------------------------------------------
+Yes, there is a difference between the two configurations.
+- Serial program: no difference (about 0.0115 s in both), because it uses only one
+  thread.
+- Race version: on Configuration A it never gets faster (0.0123 s with 2 threads, about
+  the same as serial), because the threads share one core. On Configuration B it gets
+  faster (0.0032 s with 8 threads) because the threads run on real separate cores, but
+  the answer is still wrong.
+- Critical and atomic: on Configuration A the time stays almost constant at 0.13 to 0.15 s
+  whatever the number of threads, because only 2 threads can run at once and they
+  mostly wait for each other. On Configuration B the time increases with the thread
+  count (critical 0.13 s with 1 thread to 1.27 s with 16 threads), because with more cores
+  actually running in parallel there is more real contention on the lock and the shared
+  cache line. So the extra cores do not help; they make the lock-based versions slower.
+
+------------------------------------------------------------------------------
+7. Speedup (Serial time / Parallel time, serial = 0.0115 s on B and 0.012 s on A)
+------------------------------------------------------------------------------
+Configuration B (4 cores / 8 hardware threads):
+ Threads | Race (wrong) | Critical | Atomic
+    1    |    0.66      |  0.09    | 0.12
+    2    |    1.95      |  0.05    | 0.02
+    4    |    1.89      |  0.03    | 0.02
+    8    |    3.59      |  0.01    | 0.01
+   16    |    3.38      |  0.01    | 0.01
+
+Configuration A (1 core / 2 hardware threads):
+ Threads | Race (wrong) | Critical | Atomic
+    1    |    0.88      |  0.09    | 0.11
+    2    |    0.98      |  0.08    | 0.08
+    4    |    0.99      |  0.08    | 0.09
+    8    |    1.04      |  0.08    | 0.09
+   16    |    1.02      |  0.08    | 0.09
+
+All speedups of the correct (critical/atomic) versions are far below 1, i.e. a slowdown.
+The only speedup above 1 (up to about 3.6 on Configuration B) belongs to the racy
+program, whose result is wrong, so it does not count.
+
+Conclusion: a critical or atomic section fixes the data race and gives the correct
+value of pi, but protecting the update on every iteration removes the parallelism.
+For a sum like this the efficient correct solution is to give each thread a private
+partial sum and combine them at the end (reduction(+:sum)), so synchronisation is needed
+only once per thread instead of once per iteration.

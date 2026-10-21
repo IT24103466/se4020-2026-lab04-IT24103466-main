@@ -1,0 +1,4 @@
+threads=24 schedule=static pi=3.1415926536 avg_time=1.2010
+threads=24 schedule=dynamic pi=3.1415926536 avg_time=1.2483
+threads=24 schedule=guided pi=3.1415926536 avg_time=1.4501
+threads=24 schedule=auto pi=3.1415926536 avg_time=1.3653

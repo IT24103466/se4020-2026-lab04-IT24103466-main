@@ -1,0 +1,25 @@
+threads=1
+serial  pi=3.1415926536 time=0.0249s
+racy    pi=3.1415926536 time=0.0175s
+critical pi=3.1415926536 time=0.1286s
+atomic  pi=3.1415926536 time=0.0940s
+threads=2
+serial  pi=3.1415926536 time=0.0115s
+racy    pi=1.2870022176 time=0.0059s
+critical pi=3.1415926536 time=0.2135s
+atomic  pi=3.1415926536 time=0.4642s
+threads=4
+serial  pi=3.1415926536 time=0.0121s
+racy    pi=0.7194139992 time=0.0061s
+critical pi=3.1415926536 time=0.4598s
+atomic  pi=3.1415926536 time=0.6271s
+threads=8
+serial  pi=3.1415926536 time=0.0115s
+racy    pi=0.2662726551 time=0.0032s
+critical pi=3.1415926536 time=0.9257s
+atomic  pi=3.1415926536 time=0.8698s
+threads=16
+serial  pi=3.1415926536 time=0.0116s
+racy    pi=0.3883982582 time=0.0034s
+critical pi=3.1415926536 time=1.2723s
+atomic  pi=3.1415926536 time=0.9041s
